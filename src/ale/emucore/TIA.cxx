@@ -391,6 +391,14 @@ bool TIA::save(Serializer& out)
     // rebases the cycle counters, so a restore into an emulator whose flag disagrees runs
     // a different number of cycles in its next frame.
     out.putBool(myPartialFrameFlag);
+    // A partial frame resumes drawing without startFrame() resetting this cursor.
+    // Store an offset so the state can also be restored into another TIA instance.
+    out.putInt(static_cast<int>(myFramePointer - myCurrentFrameBuffer));
+    // Games can leave pixels undrawn across multiple frames. Both buffers and
+    // the greying flag are needed to replay an interrupted frame exactly.
+    out.putBool(myFrameGreyed);
+    out.putString(std::string(reinterpret_cast<const char*>(myCurrentFrameBuffer), 160 * 300));
+    out.putString(std::string(reinterpret_cast<const char*>(myPreviousFrameBuffer), 160 * 300));
 
     // Save the sound sample stuff ...
     mySound->save(out);
@@ -490,6 +498,17 @@ bool TIA::load(Deserializer& in)
     myDumpDisabledCycle = (int) in.getInt();
 
     myPartialFrameFlag = in.getBool();
+    const int frameOffset = in.getInt();
+    if(frameOffset < 0 || frameOffset > 160 * 300)
+      return false;
+    myFramePointer = myCurrentFrameBuffer + frameOffset;
+    myFrameGreyed = in.getBool();
+    const std::string currentFrame = in.getString();
+    const std::string previousFrame = in.getString();
+    if(currentFrame.size() != 160 * 300 || previousFrame.size() != 160 * 300)
+      return false;
+    std::memcpy(myCurrentFrameBuffer, currentFrame.data(), currentFrame.size());
+    std::memcpy(myPreviousFrameBuffer, previousFrame.data(), previousFrame.size());
 
     // Load the sound sample stuff ...
     mySound->load(in);

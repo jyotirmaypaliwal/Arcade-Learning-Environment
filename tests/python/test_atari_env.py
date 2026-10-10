@@ -272,9 +272,7 @@ def test_sound_obs():
 @pytest.mark.parametrize("env_id", UNIQUE_GAMES)
 def test_clone_restore(env_id, seed=0):
     """Serializing a state, restoring it and serializing again must not change the bytes."""
-    env = gymnasium.make(
-        "ALE/MontezumaRevenge-v5", frameskip=1, repeat_action_probability=0.0
-    )
+    env = gymnasium.make(env_id, frameskip=1, repeat_action_probability=0.0)
     env.reset(seed=seed)
     env.action_space.seed(seed)
 
@@ -325,15 +323,14 @@ def test_clone_pickle_restore_new_env(use_pickle):
 
 
 @pytest.mark.parametrize("env_id", UNIQUE_GAMES)
-def test_restore_reproduces_the_trajectory(env_id):
+def test_restore_reproduces_the_trajectory(env_id, seed=0):
     """A restored state must replay a fixed action stream exactly as the live state did."""
     env = gymnasium.make(env_id, frameskip=1, repeat_action_probability=0.0)
 
-    seed = np.random.randint(1e6)
     env.reset(seed=seed)
     env.action_space.seed(seed)
 
-    num_initial_steps = np.random.randint(20)
+    num_initial_steps = np.random.default_rng(seed).integers(20)
     for _ in range(num_initial_steps):
         env.step(env.action_space.sample())
 
@@ -371,6 +368,38 @@ def test_restore_reproduces_the_trajectory(env_id):
                 f"{env_id}: the observation diverged {step + 1} steps after the restore "
                 f"({int((ref[0] != alt[0]).sum())} values differ)"
             )
+
+
+@pytest.mark.parametrize("new_env", (False, True))
+@pytest.mark.parametrize("initial_steps", (0, 5, 19))
+def test_restore_partial_frame(new_env, initial_steps):
+    """Restoring Qbert's partial frames must preserve the drawing cursor and pixels."""
+    seed = 332982
+    with gymnasium.make(
+        "ALE/Qbert-v5", frameskip=1, repeat_action_probability=0.0
+    ) as env:
+        env.reset(seed=seed)
+        env.action_space.seed(seed)
+        for _ in range(initial_steps):
+            env.step(env.action_space.sample())
+
+        snapshot = env.unwrapped.clone_state(include_rng=True).serialize()
+        actions = [env.action_space.sample() for _ in range(200)]
+        reference = [env.step(action) for action in actions]
+
+        if new_env:
+            with gymnasium.make(
+                "ALE/Qbert-v5", frameskip=1, repeat_action_probability=0.0
+            ) as other:
+                other.reset(seed=seed)
+                other.unwrapped.restore_state(ale_py.ALEState(snapshot))
+                replay = [other.step(action) for action in actions]
+        else:
+            env.unwrapped.restore_state(ale_py.ALEState(snapshot))
+            replay = [env.step(action) for action in actions]
+
+        for step, (ref, alt) in enumerate(zip(reference, replay)):
+            assert data_equivalence(ref, alt), f"Replay diverged at step {step + 1}"
 
 
 def test_determinism(
