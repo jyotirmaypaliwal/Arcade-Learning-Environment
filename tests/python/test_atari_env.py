@@ -323,14 +323,15 @@ def test_clone_pickle_restore_new_env(use_pickle):
 
 
 @pytest.mark.parametrize("env_id", UNIQUE_GAMES)
-def test_restore_reproduces_the_trajectory(env_id, seed=0):
+def test_restore_reproduces_the_trajectory(env_id):
     """A restored state must replay a fixed action stream exactly as the live state did."""
     env = gymnasium.make(env_id, frameskip=1, repeat_action_probability=0.0)
 
+    seed = np.random.randint(1e6)
     env.reset(seed=seed)
     env.action_space.seed(seed)
 
-    num_initial_steps = np.random.default_rng(seed).integers(20)
+    num_initial_steps = np.random.randint(20)
     for _ in range(num_initial_steps):
         env.step(env.action_space.sample())
 
