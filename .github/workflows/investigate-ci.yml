@@ -1,0 +1,28 @@
+name: Investigate main CI
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-linux-mixed
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '12.6.2'
+          method: network
+          sub-packages: '["nvcc", "cudart"]'
+      - run: ./scripts/download_unpack_roms.sh
+      - run: python -m pip install --verbose .[test]
+      - name: Reproduce with uncaptured diagnostics
+        run: python -m pytest -x -s -vv
