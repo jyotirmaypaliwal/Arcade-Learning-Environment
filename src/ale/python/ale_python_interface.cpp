@@ -15,6 +15,7 @@
  **************************************************************************** */
 
 #include "ale_python_interface.hpp"
+#include "ale/emucore/Console.hxx"
 
 namespace ale {
 
@@ -25,8 +26,8 @@ void ALEPythonInterface::getScreen(
     throw std::runtime_error("Expected a numpy array with two dimensions.");
   }
 
-  size_t h = environment->getScreen().height();
-  size_t w = environment->getScreen().width();
+  size_t h = theOSystem->console().mediaSource().height();
+  size_t w = theOSystem->console().mediaSource().width();
 
   if (buffer.shape(0) != h || buffer.shape(1) != w) {
     std::stringstream msg;
@@ -47,8 +48,8 @@ void ALEPythonInterface::getScreenRGB(
     throw std::runtime_error("Expected a numpy array with three dimensions.");
   }
 
-  size_t h = environment->getScreen().height();
-  size_t w = environment->getScreen().width();
+  size_t h = theOSystem->console().mediaSource().height();
+  size_t w = theOSystem->console().mediaSource().width();
 
   if (buffer.shape(0) != h || buffer.shape(1) != w || buffer.shape(2) != 3) {
     std::stringstream msg;
@@ -57,10 +58,7 @@ void ALEPythonInterface::getScreenRGB(
     throw std::runtime_error(msg.str());
   }
 
-  pixel_t* src = environment->getScreen().getArray();
-  pixel_t* dst = buffer.data();
-
-  theOSystem->colourPalette().applyPaletteRGB(dst, src, w * h);
+  environment->getScreenRGB(buffer.data());
 }
 
 void ALEPythonInterface::getScreenGrayscale(
@@ -69,8 +67,8 @@ void ALEPythonInterface::getScreenGrayscale(
     throw std::runtime_error("Expected a numpy array with two dimensions.");
   }
 
-  size_t h = environment->getScreen().height();
-  size_t w = environment->getScreen().width();
+  size_t h = theOSystem->console().mediaSource().height();
+  size_t w = theOSystem->console().mediaSource().width();
 
   if (buffer.shape(0) != h || buffer.shape(1) != w) {
     std::stringstream msg;
@@ -79,15 +77,12 @@ void ALEPythonInterface::getScreenGrayscale(
     throw std::runtime_error(msg.str());
   }
 
-  pixel_t* src = environment->getScreen().getArray();
-  pixel_t* dst = buffer.data();
-
-  theOSystem->colourPalette().applyPaletteGrayscale(dst, src, h * w);
+  environment->getScreenGrayscale(buffer.data());
 }
 
 nb::ndarray<nb::numpy, pixel_t> ALEPythonInterface::getScreen() {
-  size_t w = environment->getScreen().width();
-  size_t h = environment->getScreen().height();
+  size_t w = theOSystem->console().mediaSource().width();
+  size_t h = theOSystem->console().mediaSource().height();
 
   // Allocate memory for the array
   size_t size = h * w;
@@ -108,16 +103,15 @@ nb::ndarray<nb::numpy, pixel_t> ALEPythonInterface::getScreen() {
 }
 
 nb::ndarray<nb::numpy, pixel_t> ALEPythonInterface::getScreenRGB() {
-  size_t h = environment->getScreen().height();
-  size_t w = environment->getScreen().width();
+  size_t h = theOSystem->console().mediaSource().height();
+  size_t w = theOSystem->console().mediaSource().width();
 
   // Allocate memory for RGB array (h * w * 3)
   size_t size = h * w * 3;
   pixel_t* data = new pixel_t[size];
 
   // Apply RGB palette
-  pixel_t* src = environment->getScreen().getArray();
-  theOSystem->colourPalette().applyPaletteRGB(data, src, w * h);
+  environment->getScreenRGB(data);
 
   // Create capsule for cleanup
   nb::capsule owner(data, [](void *p) noexcept {
@@ -131,16 +125,15 @@ nb::ndarray<nb::numpy, pixel_t> ALEPythonInterface::getScreenRGB() {
 
 nb::ndarray<nb::numpy, pixel_t>
 ALEPythonInterface::getScreenGrayscale() {
-  size_t w = environment->getScreen().width();
-  size_t h = environment->getScreen().height();
+  size_t w = theOSystem->console().mediaSource().width();
+  size_t h = theOSystem->console().mediaSource().height();
 
   // Allocate memory for the array
   size_t size = h * w;
   pixel_t* data = new pixel_t[size];
 
   // Apply grayscale palette
-  pixel_t* src = environment->getScreen().getArray();
-  theOSystem->colourPalette().applyPaletteGrayscale(data, src, h * w);
+  environment->getScreenGrayscale(data);
 
   // Create capsule for cleanup
   nb::capsule owner(data, [](void *p) noexcept {

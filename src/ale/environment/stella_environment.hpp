@@ -22,6 +22,7 @@
 #include "ale/environment/ale_screen.hpp"
 #include "ale/environment/ale_state.hpp"
 #include "ale/environment/phosphor_blend.hpp"
+#include "ale/environment/frame_processor.hpp"
 #include "ale/environment/stella_environment_wrapper.hpp"
 #include "ale/emucore/Event.hxx"
 #include "ale/emucore/OSystem.hxx"
@@ -110,12 +111,15 @@ class StellaEnvironment {
   const ALEState& getState() const;
 
   /** Returns the current screen after processing (e.g. colour averaging) */
-  const ALEScreen& getScreen() const { return m_screen; }
+  const ALEScreen& getScreen() const;
+
+  void getScreenRGB(uint8_t* out) const;
+  void getScreenGrayscale(uint8_t* out) const;
 
   /** Accessor methods for RAM. `setRAM` can be useful to alter the environment.
    *  For example, learning a causal model of RAM transitions, changing environment dynamics, etc. */
   void setRAM(size_t memory_index, byte_t value);
-  const ALERAM& getRAM() const { return m_ram; }
+  const ALERAM& getRAM() const;
 
   /** Returns the current audio frame */
   const std::vector<uint8_t>& getAudio() const { return m_sound; }
@@ -160,6 +164,7 @@ class StellaEnvironment {
  private:
   stella::OSystem* m_osystem;
   RomSettings* m_settings;
+  std::unique_ptr<FrameProcessor> m_frame_processor;
   PhosphorBlend m_phosphor_blend; // For performing phosphor colour averaging, if so desired
   stella::Random m_random; // Environment random number generator, used for sticky actions
   std::string m_cartridge_md5; // Necessary for saving and loading emulator state
