@@ -17,19 +17,22 @@
 #include "ale/environment/phosphor_blend.hpp"
 
 #include <cassert>
+#include <cmath>
 
 #include "ale/emucore/Console.hxx"
 
 namespace ale {
 using namespace stella;   // OSystem
 
-PhosphorBlend::PhosphorBlend(OSystem* osystem) : m_osystem(osystem) {
+PhosphorBlend::PhosphorBlend(OSystem* osystem)
+    : FrameProcessor(osystem->colourPalette()), m_osystem(osystem) {
   // Taken from default Stella settings
   m_phosphor_blend_ratio = 77;
 
   // The tables are only read for colour averaging, which is off by default, so
   // skip building them otherwise.
-  if (m_osystem->settings().getBool("color_averaging")) {
+  if (m_osystem->settings().getBool("color_averaging") ||
+      m_osystem->settings().getBool("frame_average")) {
     m_rgb_ntsc = std::make_unique<uint8_t[][64][64]>(64);
     m_avg_palette = std::make_unique<uint32_t[][256]>(256);
     makeAveragePalette();
@@ -56,12 +59,36 @@ void PhosphorBlend::process(ALEScreen& screen) {
     screen.getArray()[i] = rgbToNTSC(rgb);
   }
 }
+void PhosphorBlend::processRGB(stella::MediaSource& media, uint8_t* out) {
+  const auto* current = media.currentFrameBuffer();
+  const auto* previous = media.previousFrameBuffer();
+  const size_t size = media.width() * media.height();
+  for (size_t i = 0; i < size; ++i) {
+    const uint32_t rgb = m_avg_palette[current[i]][previous[i]];
+    *out++ = (rgb >> 16) & 0xff;
+    *out++ = (rgb >> 8) & 0xff;
+    *out++ = rgb & 0xff;
+  }
+}
+
+void PhosphorBlend::processGrayscale(stella::MediaSource& media, uint8_t* out) {
+  const auto* current = media.currentFrameBuffer();
+  const auto* previous = media.previousFrameBuffer();
+  const size_t size = media.width() * media.height();
+  for (size_t i = 0; i < size; ++i) {
+    const uint32_t rgb = m_avg_palette[current[i]][previous[i]];
+    out[i] = static_cast<uint8_t>(std::round(
+        ((rgb >> 16) & 0xff) * 0.2989 +
+        ((rgb >> 8) & 0xff) * 0.5870 + (rgb & 0xff) * 0.1140));
+  }
+}
+
 void PhosphorBlend::makeAveragePalette() {
   ColourPalette& palette = m_osystem->colourPalette();
 
   // Precompute the average RGB values for phosphor-averaged colors c1 and c2.
-  for (int c1 = 0; c1 < 256; c1 += 2) {
-    for (int c2 = 0; c2 < 256; c2 += 2) {
+  for (int c1 = 0; c1 < 256; ++c1) {
+    for (int c2 = 0; c2 < 256; ++c2) {
       int r1, g1, b1;
       int r2, g2, b2;
       palette.getRGB(c1, r1, g1, b1);

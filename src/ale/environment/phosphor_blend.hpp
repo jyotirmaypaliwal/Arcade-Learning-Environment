@@ -21,14 +21,17 @@
 
 #include "ale/emucore/OSystem.hxx"
 #include "ale/environment/ale_screen.hpp"
+#include "ale/environment/frame_processor.hpp"
 
 namespace ale {
 
-class PhosphorBlend {
+class PhosphorBlend : public FrameProcessor {
  public:
   PhosphorBlend(stella::OSystem*);
 
   void process(ALEScreen& screen);
+  void processRGB(stella::MediaSource& media, uint8_t* out) override;
+  void processGrayscale(stella::MediaSource& media, uint8_t* out) override;
 
  private:
   void makeAveragePalette();

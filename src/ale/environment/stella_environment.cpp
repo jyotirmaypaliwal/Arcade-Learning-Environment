@@ -23,6 +23,8 @@
 #include <optional>
 
 #include "ale/common/SoundRaw.hxx"
+#include "ale/environment/frame_identity.hpp"
+#include "ale/environment/frame_max.hpp"
 #include "ale/emucore/System.hxx"
 
 namespace ale {
@@ -70,7 +72,17 @@ StellaEnvironment::StellaEnvironment(OSystem* osystem, RomSettings* settings)
       m_osystem->settings().getInt("max_num_frames_per_episode");
   m_max_lives = m_settings->lives();
   m_truncate_on_loss_of_life = m_osystem->settings().getBool("truncate_on_loss_of_life");
-  m_colour_averaging = m_osystem->settings().getBool("color_averaging");
+  m_colour_averaging = m_osystem->settings().getBool("color_averaging") ||
+                       m_osystem->settings().getBool("frame_average");
+  const bool frame_max = m_osystem->settings().getBool("frame_max");
+  if (m_colour_averaging && frame_max) {
+    throw std::runtime_error("Cannot enable both frame averaging and frame maxing.");
+  }
+  if (frame_max) {
+    m_frame_processor = std::make_unique<FrameMax>(m_osystem->colourPalette());
+  } else if (!m_colour_averaging) {
+    m_frame_processor = std::make_unique<FrameIdentity>(m_osystem->colourPalette());
+  }
 
   m_reward_min = m_osystem->settings().getInt("reward_min");
   m_reward_max = m_osystem->settings().getInt("reward_max");
@@ -136,11 +148,6 @@ ALEState StellaEnvironment::cloneState(bool include_rng) {
 
 void StellaEnvironment::restoreState(const ALEState& target_state) {
   m_state.load(m_osystem, m_settings, &m_random, m_cartridge_md5, target_state);
-  // m_ram and m_screen are cached copies refreshed inside act(); without these
-  // calls getRAM() and getScreen() would return what the emulator showed before
-  // the restore, until the next frame is emulated.
-  processRAM();
-  processScreen();
 }
 
 void StellaEnvironment::noopIllegalActions(Action& player_a_action,
@@ -190,7 +197,7 @@ reward_t StellaEnvironment::act(Action player_a_action, Action player_b_action,
 
     // Similarly record screen as needed
     if (m_screen_exporter.get() != NULL)
-      m_screen_exporter->saveNext(m_screen);
+      m_screen_exporter->saveNext(getScreen());
 
     // Use the stored actions, which may or may not have changed this frame
     sum_rewards += oneStepAct(m_player_a_action, m_player_b_action,
@@ -261,8 +268,6 @@ void StellaEnvironment::pressSelect(size_t num_steps) {
   for (size_t t = 0; t < num_steps; t++) {
     m_osystem->console().mediaSource().update();
   }
-  processScreen();
-  processRAM();
   emulate(PLAYER_A_NOOP, PLAYER_B_NOOP, 1.0, 1.0);
   m_state.incrementFrame();
 }
@@ -307,8 +312,6 @@ void StellaEnvironment::emulate(
   }
 
   // Parse screen and RAM into their respective data structures
-  processScreen();
-  processRAM();
 }
 
 /** Accessor methods for the environment state. */
@@ -319,6 +322,47 @@ const ALEState& StellaEnvironment::getState() const { return m_state; }
 std::unique_ptr<StellaEnvironmentWrapper> StellaEnvironment::getWrapper() {
   return std::unique_ptr<StellaEnvironmentWrapper>(
       new StellaEnvironmentWrapper(*this));
+}
+
+const ALEScreen& StellaEnvironment::getScreen() const {
+  // Preserve the C++ palette-index API, materializing only when requested.
+  const_cast<StellaEnvironment*>(this)->processScreen();
+  return m_screen;
+}
+
+const ALERAM& StellaEnvironment::getRAM() const {
+  const_cast<StellaEnvironment*>(this)->processRAM();
+  return m_ram;
+}
+
+void StellaEnvironment::getScreenRGB(uint8_t* out) const {
+  if (m_osystem->settings().getBool("color_averaging") &&
+      !m_osystem->settings().getBool("frame_average")) {
+    const auto& screen = getScreen();
+    m_osystem->colourPalette().applyPaletteRGB(out, screen.getArray(), screen.arraySize());
+    return;
+  }
+  auto& media = m_osystem->console().mediaSource();
+  if (m_colour_averaging) {
+    const_cast<PhosphorBlend&>(m_phosphor_blend).processRGB(media, out);
+  } else {
+    m_frame_processor->processRGB(media, out);
+  }
+}
+
+void StellaEnvironment::getScreenGrayscale(uint8_t* out) const {
+  if (m_osystem->settings().getBool("color_averaging") &&
+      !m_osystem->settings().getBool("frame_average")) {
+    const auto& screen = getScreen();
+    m_osystem->colourPalette().applyPaletteGrayscale(out, screen.getArray(), screen.arraySize());
+    return;
+  }
+  auto& media = m_osystem->console().mediaSource();
+  if (m_colour_averaging) {
+    const_cast<PhosphorBlend&>(m_phosphor_blend).processGrayscale(media, out);
+  } else {
+    m_frame_processor->processGrayscale(media, out);
+  }
 }
 
 void StellaEnvironment::processScreen() {

@@ -49,6 +49,22 @@ This can be an issue for agents that do not consider the whole screen history.
 By default, _color averaging_ is **not** enabled, that is, the environment output is the actual frame from the emulator.
 This behaviour can be turned on using `setBool` with the `color_averaging` key.
 
+For direct RGB blending without quantizing the result back to the Atari palette,
+set `frame_average` to `true` before loading the ROM. The legacy `color_averaging`
+option keeps its existing palette-quantized output for reproducibility.
+
+Set `frame_max` to `true` to take the maximum of the last two emulated frames.
+`getScreenRGB` takes the maximum independently for each colour channel;
+`getScreenGrayscale` takes the maximum after converting each frame to luminance.
+These processors use the last two emulator frames, including when `frame_skip`
+is greater than one. Frame maxing cannot be enabled together with either
+averaging option; loading a ROM with conflicting settings raises an error.
+
+Frame processing applies to RGB and grayscale observations, including the
+preallocated-buffer APIs. The palette-index C++ accessor and screen-export path
+retain their existing behaviour; they cannot represent per-channel RGB maxima.
+
+
 ## Action Repeat Stochasticity
 
 Beginning with ALE 0.5.0, there is now an option (enabled by default) to add
@@ -88,6 +104,8 @@ The C++ and Python interfaces are configured with `setBool`, `setInt`, `setFloat
 | `truncate_on_loss_of_life`   | `bool`  | `false`        | Truncate the episode when a life is lost.                                                                                       |
 | `reward_min`, `reward_max`   | `int`   | int min / max  | Clip the reward returned by `act` to this range.                                                                                |
 | `color_averaging`            | `bool`  | `false`        | Average the colours of the current and previous frames to reduce flickering, see above.                                         |
+| `frame_average` | `bool` | `false` | Blend the last two frames directly in RGB without palette quantization. |
+| `frame_max` | `bool` | `false` | Max-pool the last two frames per RGB channel, or by luminance for grayscale. |
 | `paddle_min`, `paddle_max`   | `int`   | per game       | Override the range of paddle resistance values used by paddle games.                                                            |
 | `sound_obs`                  | `bool`  | `false`        | Record the audio of each frame so that it can be read with `getAudio`.                                                          |
 | `display_screen`             | `bool`  | `false`        | Display the screen in a window (requires SDL support).                                                                          |
